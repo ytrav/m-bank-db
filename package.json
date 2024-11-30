@@ -1,0 +1,23 @@
+{
+  "name": "m-bank-db",
+  "version": "1.0.0",
+  "description": "Backend server for mBank's database, Maevetopia's first digital banking platform",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "mbank",
+    "maevetopia",
+    "maevetopian",
+    "ytrav"
+  ],
+  "author": "ytrav",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "sqlite3": "^5.1.7"
+  }
+}
