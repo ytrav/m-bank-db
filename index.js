@@ -52,7 +52,7 @@ app.post("/login", (req, res) => {
   const { accountNum, password } = req.body;
   // const hashed_password = bcrypt.hashSync(password, 12);
   db.get(
-    'SELECT * FROM User WHERE account_number = ?',
+    "SELECT * FROM User WHERE account_number = ?",
     [accountNum],
     (err, row) => {
       if (err) {
@@ -61,18 +61,122 @@ app.post("/login", (req, res) => {
       }
       if (row && bcrypt.compareSync(password, row.password)) {
         res.json({
-          message: 'success',
+          message: "success",
           userData: row,
         });
       } else {
-        res.status(401).json({ message: 'Invalid account number or password' });
+        res.status(401).json({ message: "Invalid account number or password" });
       }
     }
   );
-  
-  
+});
+app.post("/transfer", (req, res) => {
+  const { sender, receiver, amount } = req.body;
+
+  if (!sender || !receiver || !amount) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  // Check if sender account exists
+  db.get(
+    "SELECT * FROM User WHERE account_number = ?",
+    [sender],
+    (err, senderRow) => {
+      if (err) {
+        return res
+          .status(500)
+          .json({ error: "Database error: " + err.message });
+      }
+      if (!senderRow) {
+        return res.status(404).json({ error: "Sender account not found" });
+      }
+      if (senderRow.balance < amount) {
+        return res.status(400).json({ error: "Insufficient balance" });
+      }
+
+      // Check if receiver account exists
+      db.get(
+        "SELECT * FROM User WHERE account_number = ?",
+        [receiver],
+        (err, receiverRow) => {
+          if (err) {
+            return res
+              .status(500)
+              .json({ error: "Database error: " + err.message });
+          }
+          if (!receiverRow) {
+            return res
+              .status(404)
+              .json({ error: "Receiver account not found" });
+          }
+
+          // Deduct amount from sender
+          db.run(
+            "UPDATE User SET balance = balance - ? WHERE account_number = ?",
+            [amount, sender],
+            (err) => {
+              if (err) {
+                return res
+                  .status(500)
+                  .json({ error: "Database error: " + err.message });
+              }
+
+              // Add amount to receiver
+              db.run(
+                "UPDATE User SET balance = balance + ? WHERE account_number = ?",
+                [amount, receiver],
+                (err) => {
+                  if (err) {
+                    return res
+                      .status(500)
+                      .json({ error: "Database error: " + err.message });
+                  }
+
+                  // Log outgoing transaction for sender
+                  db.run(
+                    `INSERT INTO Transaction (sender_account_number, receiver_account_number, amount, type, description)
+                    VALUES (?, ?, ?, 'outgoing', 'Transfer to account ${receiver}')`,
+                    [sender, receiver, amount],
+                    (err) => {
+                      if (err) {
+                        return res
+                          .status(500)
+                          .json({ error: "Database error: " + err.message });
+                      }
+
+                      // Log incoming transaction for receiver
+                      db.run(
+                        `INSERT INTO Transaction (sender_account_number, receiver_account_number, amount, type, description)
+                        VALUES (?, ?, ?, 'incoming', 'Received from account ${sender}')`,
+                        [sender, receiver, amount],
+                        (err) => {
+                          if (err) {
+                            return res
+                              .status(500)
+                              .json({
+                                error: "Database error: " + err.message,
+                              });
+                          }
+
+                          return res
+                            .status(200)
+                            .json({ message: "Transfer successful" });
+                        }
+                      );
+                    }
+                  );
+                }
+              );
+            }
+          );
+        }
+      );
+    }
+  );
 });
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
+
+
