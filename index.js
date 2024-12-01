@@ -4,6 +4,8 @@ const sqlite3 = require("sqlite3").verbose();
 const bodyParser = require("body-parser");
 const bcrypt = require("bcrypt");
 
+const { v4: uuidv4 } = require("uuid");
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -70,6 +72,43 @@ app.post("/login", (req, res) => {
     }
   );
 });
+
+app.post("/generate-invite", (req, res) => {
+  const { password } = req.body;
+  if (!password) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  db.get("SELECT * FROM User WHERE id = 1", (err, row) => {
+    if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({ error: "Database error: " + err.message });
+    }
+    if (!row) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (bcrypt.compareSync(password, row.password)) {
+      const inviteCode = uuidv4();
+      db.run(
+        "INSERT INTO Invite_Codes (code) VALUES (?)",
+        [inviteCode],
+        (err) => {
+          if (err) {
+            console.error("Database error:", err);
+            return res
+              .status(500)
+              .json({ error: "Database error: " + err.message });
+          }
+          return res.status(200).json({ inviteCode });
+        }
+      );
+    } else {
+      return res.status(401).json({ error: "Invalid password" });
+    }
+  });
+});
+
 app.post("/transfer", (req, res) => {
   const { sender, receiver, amount } = req.body;
 
@@ -151,11 +190,9 @@ app.post("/transfer", (req, res) => {
                         [sender, receiver, amount],
                         (err) => {
                           if (err) {
-                            return res
-                              .status(500)
-                              .json({
-                                error: "Database error: " + err.message,
-                              });
+                            return res.status(500).json({
+                              error: "Database error: " + err.message,
+                            });
                           }
 
                           return res
@@ -178,5 +215,3 @@ app.post("/transfer", (req, res) => {
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
-
-
