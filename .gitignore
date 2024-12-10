@@ -2,3 +2,5 @@
 /node_modules
 
 mBank.session.sql
+
+.env.local
