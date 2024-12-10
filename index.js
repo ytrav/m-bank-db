@@ -18,7 +18,7 @@ const app = express();
 app.use(
   cors({
     credentials: true,
-    origin: "https://bank.maevetopia.fun/",
+    origin: "https://bank.maevetopia.fun",
   })
 );
 app.use(express.json());
