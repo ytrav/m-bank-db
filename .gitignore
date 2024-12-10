@@ -4,3 +4,4 @@
 mBank.session.sql
 
 .env.local
+.vercel
