@@ -5,3 +5,7 @@ mBank.session.sql
 
 .env.local
 .vercel
+
+mBank.db
+dump.sql
+updated_dump.sql

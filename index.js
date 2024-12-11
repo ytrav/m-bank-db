@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const sqlite3 = require("sqlite3").verbose();
+const { Pool } = require("pg");
 const bodyParser = require("body-parser");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
@@ -27,11 +28,18 @@ const port = 3000;
 
 app.use(bodyParser.json());
 
-const db = new sqlite3.Database("./mBank.db", (err) => {
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+});
+
+db.connect((err) => {
   if (err) {
-    console.error("Could not connect to database", err);
+    console.error("Could not connect to PostgreSQL database", err);
   } else {
-    console.log("Connected to database");
+    console.log("Connected to PostgreSQL database");
   }
 });
 
@@ -69,114 +77,105 @@ const authenticateRefreshToken = (req, res, next) => {
   });
 };
 
-const getUserData = (identifier, type = "id") => {
-  return new Promise((resolve, reject) => {
-    const column = type === "id" ? "id" : "account_number";
-    db.get(
+const getUserData = async (identifier, type = "id") => {
+  const column = type === "id" ? "id" : "account_number";
+
+  try {
+    // Get user and card data
+    const userResult = await db.query(
       `SELECT u.*,
-        c.number AS card_number,
-        c.expiry_date AS card_expiry_date
-      FROM User u
-        LEFT JOIN Card c ON u.id = c.owner_id
-      WHERE u.${column} = ?`,
-      [identifier],
-      (err, userRow) => {
-        if (err) {
-          reject(new Error(`Database error: ${err.message}`));
-        } else if (!userRow) {
-          reject(new Error("User not found"));
-        } else {
-          db.all(
-            `SELECT *,
-              CASE
-                WHEN sender_account_number = ? THEN 'SUBTRACTION'
-                WHEN receiver_account_number = ? THEN 'ADDITION'
-              END AS transaction_type
-             FROM "Transaction"
-             WHERE sender_account_number = ? OR receiver_account_number = ?`,
-            [
-              userRow.account_number,
-              userRow.account_number,
-              userRow.account_number,
-              userRow.account_number,
-            ],
-            (txErr, transactionRows) => {
-              if (txErr) {
-                reject(new Error(`Database error: ${txErr.message}`));
-              } else {
-                resolve({
-                  id: userRow.id,
-                  f_name: userRow.f_name,
-                  l_name: userRow.l_name,
-                  account_number: userRow.account_number,
-                  gender: userRow.gender,
-                  balance: userRow.balance,
-                  card: {
-                    number: userRow.card_number,
-                    expiry_date: userRow.card_expiry_date,
-                  },
-                  transactions: transactionRows.reverse().map((tx) => ({
-                    ...tx,
-                    personal_type:
-                      tx.sender_account_number === userRow.account_number
-                        ? "subtraction"
-                        : "addition",
-                  })),
-                });
-              }
-            }
-          );
-        }
-      }
+              c.number AS card_number,
+              c.expiry_date AS card_expiry_date
+       FROM "User" u
+       LEFT JOIN "card" c ON u.id = c.owner_id
+       WHERE u.${column} = $1`,
+      [identifier]
     );
-  });
-};
 
-const getUserPassword = (account_number) => {
-  return new Promise((resolve, reject) => {
-    db.get(
-      "SELECT password FROM User WHERE account_number = ?",
-      [account_number],
-      (err, row) => {
-        if (err) {
-          reject(new Error(`Database error: ${err.message}`));
-        } else if (!row) {
-          reject(new Error("User not found"));
-        } else {
-          resolve(row.password);
-        }
-      }
-    );
-  });
-};
+    const userRow = userResult.rows[0];
 
-app.get("/users", (req, res) => {
-  db.all("SELECT * FROM User;", (err, rows) => {
-    if (err) {
-      res.status(400).json({ error: err.message });
-      return;
-    } else {
-      res.json({
-        message: "success",
-        data: rows,
-      });
+    if (!userRow) {
+      throw new Error("User not found");
     }
-  });
+
+    // Get transaction data
+    const transactionResult = await db.query(
+      `SELECT *,
+              CASE
+                WHEN sender_account_number = $1 THEN 'SUBTRACTION'
+                WHEN receiver_account_number = $1 THEN 'ADDITION'
+              END AS transaction_type
+       FROM "Transaction"
+       WHERE sender_account_number = $1 OR receiver_account_number = $1`,
+      [userRow.account_number]
+    );
+
+    return {
+      id: userRow.id,
+      f_name: userRow.f_name,
+      l_name: userRow.l_name,
+      account_number: userRow.account_number,
+      gender: userRow.gender,
+      balance: userRow.balance,
+      card: {
+        number: userRow.card_number,
+        expiry_date: userRow.card_expiry_date,
+      },
+      transactions: transactionResult.rows.reverse().map((tx) => ({
+        ...tx,
+        personal_type:
+          tx.sender_account_number === userRow.account_number
+            ? "subtraction"
+            : "addition",
+      })),
+    };
+  } catch (err) {
+    throw new Error(`Database error: ${err.message}`);
+  }
+};
+
+const getUserPassword = async (account_number) => {
+  try {
+    const result = await db.query(
+      'SELECT password FROM "User" WHERE account_number = $1',
+      [account_number]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error("User not found");
+    }
+
+    return result.rows[0].password;
+  } catch (err) {
+    throw new Error(`Database error: ${err.message}`);
+  }
+};
+
+app.get("/users", async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM "User"');
+
+    res.json({
+      message: "success",
+      data: result.rows,
+    });
+  } catch (err) {
+    res.status(400).json({ error: `Database error: ${err.message}` });
+  }
 });
 
-app.get("/users/:id", (req, res) => {
+app.get("/users/:id", async (req, res) => {
   const id = req.params.id;
-  db.get(`SELECT * FROM User WHERE id = ${id};`, (err, row) => {
-    if (err) {
-      res.status(400).json({ error: err.message });
-      return;
-    } else {
-      res.json({
-        message: "success",
-        data: row,
-      });
-    }
-  });
+  try {
+    const result = await db.query("SELECT * FROM User WHERE id = $1", [id]);
+
+    res.json({
+      message: "success",
+      data: result.rows,
+    });
+  } catch (err) {
+    res.status(400).json({ error: `Database error: ${err.message}` });
+  }
 });
 
 app.get("/user", authenticateToken, async (req, res) => {
@@ -193,8 +192,6 @@ app.post("/login", async (req, res) => {
 
   try {
     const user = await getUserData(accountNum, "account_number");
-    // console.log('user: ', user.id, user.account_number);
-
     const hashedPassword = await getUserPassword(accountNum);
 
     if (bcrypt.compareSync(password, hashedPassword)) {
@@ -220,12 +217,11 @@ app.post("/login", async (req, res) => {
     }
   } catch (error) {
     console.log("error: ", error);
-    // console.log(accountNum, password, user.id, user.account_number);
-
     res.status(500).json({ error: error.message });
   }
 });
 
+// Updated /refresh route
 app.post("/refresh", authenticateRefreshToken, (req, res) => {
   const user = req.user;
 
@@ -242,40 +238,33 @@ app.post("/logout", (req, res) => {
   res.json({ message: "Logged out successfully" });
 });
 
-app.post("/generate-invite", (req, res) => {
+app.post("/generate-invite", async (req, res) => {
   const { password } = req.body;
   if (!password) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  db.get("SELECT * FROM User WHERE id = 1", (err, row) => {
-    if (err) {
-      console.error("Database error:", err);
-      return res.status(500).json({ error: "Database error: " + err.message });
-    }
+  try {
+    const result = await db.query('SELECT * FROM "User" WHERE id = $1', [1]);
+    const row = result.rows[0];
+
     if (!row) {
       return res.status(404).json({ error: "User not found" });
     }
 
     if (bcrypt.compareSync(password, row.password)) {
       const inviteCode = uuidv4();
-      db.run(
-        "INSERT INTO Invite_Codes (code) VALUES (?)",
-        [inviteCode],
-        (err) => {
-          if (err) {
-            console.error("Database error:", err);
-            return res
-              .status(500)
-              .json({ error: "Database error: " + err.message });
-          }
-          return res.status(200).json({ inviteCode });
-        }
-      );
+      await db.query('INSERT INTO "invite_codes" (code) VALUES ($1)', [
+        inviteCode,
+      ]);
+      res.status(200).json({ inviteCode });
     } else {
-      return res.status(401).json({ error: "Invalid password" });
+      res.status(401).json({ error: "Invalid password" });
     }
-  });
+  } catch (err) {
+    console.error("Database error:", err);
+    res.status(500).json({ error: `Database error: ${err.message}` });
+  }
 });
 
 app.post("/register", async (req, res) => {
@@ -287,17 +276,14 @@ app.post("/register", async (req, res) => {
 
   try {
     // Check if the invite code is valid
-    const inviteCodeRow = await new Promise((resolve, reject) => {
-      db.get(
-        "SELECT * FROM Invite_Codes WHERE code = ? AND is_used = 0",
-        [inviteCode],
-        (err, row) => {
-          if (err) reject(new Error(`Database error: ${err.message}`));
-          else if (!row) reject(new Error("Invalid or used invite code"));
-          else resolve(row);
-        }
-      );
-    });
+    const inviteCodeResult = await db.query(
+      'SELECT * FROM "invite_codes" WHERE code = $1 AND is_used = false',
+      [inviteCode]
+    );
+
+    if (inviteCodeResult.rows.length === 0) {
+      throw new Error("Invalid or used invite code");
+    }
 
     const hashedPassword = bcrypt.hashSync(password, 12);
     const newAccountNumber = Math.floor(Math.random() * 1e8)
@@ -305,28 +291,17 @@ app.post("/register", async (req, res) => {
       .padStart(8, "0");
 
     // Insert the new user
-    const userId = await new Promise((resolve, reject) => {
-      db.run(
-        "INSERT INTO User (f_name, l_name, gender, account_number, password) VALUES (?, ?, ?, ?, ?)",
-        [f_name, l_name, gender, newAccountNumber, hashedPassword],
-        function (err) {
-          if (err) reject(new Error(`Database error: ${err.message}`));
-          else resolve(this.lastID);
-        }
-      );
-    });
+    const userResult = await db.query(
+      'INSERT INTO "User" (f_name, l_name, gender, account_number, password) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [f_name, l_name, gender, newAccountNumber, hashedPassword]
+    );
+
+    const userId = userResult.rows[0].id;
 
     // Mark the invite code as used
-    await new Promise((resolve, reject) => {
-      db.run(
-        "UPDATE Invite_Codes SET is_used = 1 WHERE code = ?",
-        [inviteCode],
-        (err) => {
-          if (err) reject(new Error(`Database error: ${err.message}`));
-          else resolve();
-        }
-      );
-    });
+    await db.query('UPDATE "invite_codes" SET is_used = true WHERE code = $1', [
+      inviteCode,
+    ]);
 
     // Fetch the complete user data
     const user = await getUserData(newAccountNumber, "account_number");
@@ -359,106 +334,6 @@ app.post("/register", async (req, res) => {
     console.error("Registration error:", error.message);
     res.status(500).json({ error: error.message });
   }
-});
-
-app.post("/transfer", (req, res) => {
-  const { sender, receiver, amount } = req.body;
-
-  if (!sender || !receiver || !amount) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
-
-  // Check if sender account exists
-  db.get(
-    "SELECT * FROM User WHERE account_number = ?",
-    [sender],
-    (err, senderRow) => {
-      if (err) {
-        return res
-          .status(500)
-          .json({ error: "Database error: " + err.message });
-      }
-      if (!senderRow) {
-        return res.status(404).json({
-          error:
-            "There seems to be a problem with reading your account information. Try to sign out and back in and try again",
-        });
-      }
-      if (senderRow.balance < amount) {
-        return res
-          .status(400)
-          .json({ error: "Insufficient funds for the transaction" });
-      }
-
-      // Check if receiver account exists
-      db.get(
-        "SELECT * FROM User WHERE account_number = ?",
-        [receiver],
-        (err, receiverRow) => {
-          if (err) {
-            return res
-              .status(500)
-              .json({ error: "Database error: " + err.message });
-          }
-          if (!receiverRow) {
-            return res.status(404).json({
-              error:
-                "Account with provided number doesn't exist. Make sure you typed in the account number correctly",
-            });
-          }
-
-          // Deduct amount from sender
-          db.run(
-            "UPDATE User SET balance = balance - ? WHERE account_number = ?",
-            [amount, sender],
-            (err) => {
-              if (err) {
-                return res
-                  .status(500)
-                  .json({ error: "Database error: " + err.message });
-              }
-
-              // Add amount to receiver
-              db.run(
-                "UPDATE User SET balance = balance + ? WHERE account_number = ?",
-                [amount, receiver],
-                (err) => {
-                  if (err) {
-                    return res
-                      .status(500)
-                      .json({ error: "Database error: " + err.message });
-                  }
-
-                  const timestamp = new Date().toISOString();
-
-                  const receiver_f_name = receiverRow.f_name;
-                  const receiver_l_name = receiverRow.l_name;
-
-                  // Log transaction
-                  db.run(
-                    `INSERT INTO "Transaction" (sender_account_number, receiver_account_number, amount, timestamp, type, description)
-                    VALUES (?, ?, ?, ?, 'outgoing', 'Direct mvBank transfer to ${receiver_f_name} ${receiver_l_name}')`,
-                    [sender, receiver, amount, timestamp],
-                    (err) => {
-                      if (err) {
-                        return res
-                          .status(500)
-                          .json({ error: "Database error: " + err.message });
-                      }
-
-                      return res
-                        .status(200)
-                        .json({ message: "Transfer successful" });
-                    }
-                  );
-                }
-              );
-            }
-          );
-        }
-      );
-    }
-  );
 });
 
 app.listen(port, () => {
