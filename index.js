@@ -254,7 +254,7 @@ app.post("/generate-invite", async (req, res) => {
 
     if (bcrypt.compareSync(password, row.password)) {
       const inviteCode = uuidv4();
-      await db.query('INSERT INTO "invite_codes" (code) VALUES ($1)', [
+      await db.query('INSERT INTO "invite_codes" (code) VALUES ($1) RETURNING id', [
         inviteCode,
       ]);
       res.status(200).json({ inviteCode });
