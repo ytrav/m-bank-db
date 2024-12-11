@@ -95,7 +95,7 @@ const getUserData = async (identifier, type = "id") => {
     const userRow = userResult.rows[0];
 
     if (!userRow) {
-      throw new Error("User not found");
+      throw new Error("Incorrect credentials, make sure you entered the correct account number and password");
     }
 
     // Get transaction data
@@ -142,7 +142,7 @@ const getUserPassword = async (account_number) => {
     );
 
     if (result.rows.length === 0) {
-      throw new Error("User not found");
+      throw new Error("Incorrect credentials, make sure you entered the correct account number and password");
     }
 
     return result.rows[0].password;
@@ -282,7 +282,7 @@ app.post("/register", async (req, res) => {
     );
 
     if (inviteCodeResult.rows.length === 0) {
-      throw new Error("Invalid or used invite code");
+      throw new Error("Invite code you enter is either invalid or has been used already");
     }
 
     const hashedPassword = bcrypt.hashSync(password, 12);
