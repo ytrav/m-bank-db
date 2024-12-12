@@ -95,7 +95,9 @@ const getUserData = async (identifier, type = "id") => {
     const userRow = userResult.rows[0];
 
     if (!userRow) {
-      throw new Error("Incorrect credentials, make sure you entered the correct account number and password");
+      throw new Error(
+        "Incorrect credentials, make sure you entered the correct account number and password"
+      );
     }
 
     // Get transaction data
@@ -142,7 +144,9 @@ const getUserPassword = async (account_number) => {
     );
 
     if (result.rows.length === 0) {
-      throw new Error("Incorrect credentials, make sure you entered the correct account number and password");
+      throw new Error(
+        "Incorrect credentials, make sure you entered the correct account number and password"
+      );
     }
 
     return result.rows[0].password;
@@ -254,9 +258,10 @@ app.post("/generate-invite", async (req, res) => {
 
     if (bcrypt.compareSync(password, row.password)) {
       const inviteCode = uuidv4();
-      await db.query('INSERT INTO "invite_codes" (code) VALUES ($1) RETURNING id', [
-        inviteCode,
-      ]);
+      await db.query(
+        'INSERT INTO "invite_codes" (code) VALUES ($1) RETURNING id',
+        [inviteCode]
+      );
       res.status(200).json({ inviteCode });
     } else {
       res.status(401).json({ error: "Invalid password" });
@@ -282,7 +287,9 @@ app.post("/register", async (req, res) => {
     );
 
     if (inviteCodeResult.rows.length === 0) {
-      throw new Error("Invite code you enter is either invalid or has been used already");
+      throw new Error(
+        "Invite code you enter is either invalid or has been used already"
+      );
     }
 
     const hashedPassword = bcrypt.hashSync(password, 12);
@@ -333,6 +340,85 @@ app.post("/register", async (req, res) => {
   } catch (error) {
     console.error("Registration error:", error.message);
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/transfer", async (req, res) => {
+  const { sender, receiver, amount } = req.body;
+
+
+
+  if (!sender || !receiver || !amount) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  try {
+    // Check if sender account exists
+    const senderResult = await db.query(
+      'SELECT * FROM "User" WHERE account_number = $1',
+      [sender]
+    );
+
+    const senderRow = senderResult.rows[0];
+    if (!senderRow) {
+      return res.status(404).json({
+        error:
+          "There seems to be a problem with reading your account information. Try to sign out and back in and try again",
+      });
+    }
+    if (senderRow.balance < amount) {
+      return res
+        .status(400)
+        .json({ error: "Insufficient funds for the transaction" });
+    }
+
+    // Check if receiver account exists
+    const receiverResult = await db.query(
+      'SELECT * FROM "User" WHERE account_number = $1',
+      [receiver]
+    );
+
+    const receiverRow = receiverResult.rows[0];
+    if (!receiverRow) {
+      return res.status(404).json({
+        error:
+          "Account with provided number doesn't exist. Make sure you typed in the account number correctly",
+      });
+    }
+
+    // Start transaction
+    await db.query("BEGIN");
+
+    // Deduct amount from sender
+    await db.query(
+      'UPDATE "User" SET balance = balance - $1 WHERE account_number = $2',
+      [amount, sender]
+    );
+
+    // Add amount to receiver
+    await db.query(
+      'UPDATE "User" SET balance = balance + $1 WHERE account_number = $2',
+      [amount, receiver]
+    );
+
+    const timestamp = new Date().toISOString();
+    const description = `Direct mvBank transfer to ${receiverRow.f_name} ${receiverRow.l_name}`;
+
+    // Log transaction
+    await db.query(
+      `INSERT INTO "Transaction" (sender_account_number, receiver_account_number, amount, timestamp, type, description)
+       VALUES ($1, $2, $3, $4, 'outgoing', $5)`,
+      [sender, receiver, amount, timestamp, description]
+    );
+
+    // Commit transaction
+    await db.query("COMMIT");
+
+    res.status(200).json({ message: "Transfer successful" });
+  } catch (error) {
+    await db.query("ROLLBACK");
+    console.error("Transfer error:", error.message);
+    res.status(500).json({ error: `Database error: ${error.message}` });
   }
 });
 
