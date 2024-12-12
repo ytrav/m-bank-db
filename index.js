@@ -349,6 +349,78 @@ app.post("/register", async (req, res) => {
   }
 });
 
+app.post("/issue-card", authenticateToken, async (req, res) => {
+  // Calculate expiry date
+  const expiryDate = new Date();
+  expiryDate.setUTCFullYear(expiryDate.getUTCFullYear() + 1);
+  expiryDate.setUTCMonth(expiryDate.getUTCMonth() + 1);
+  expiryDate.setUTCDate(1);
+  expiryDate.setUTCHours(0, 0, 0, 0);
+
+  const cardNumber = Math.floor(Math.random() * 1e5)
+    .toString()
+    .padStart(5, "0");
+  const checkDigit = (() => {
+    const fullNumber = "44" + cardNumber;
+    let sum = 0;
+
+    for (let i = 0; i < fullNumber.length; i++) {
+      let digit = parseInt(fullNumber[fullNumber.length - 1 - i]);
+      if (i % 2 === 0) {
+        digit *= 2;
+        if (digit > 9) digit -= 9;
+      }
+      sum += digit;
+    }
+
+    return (10 - (sum % 10)) % 10;
+  })();
+  const finalCardNumber = "44" + cardNumber + checkDigit;
+
+  const mbv = Math.floor(Math.random() * 1e4)
+    .toString()
+    .padStart(4, "0");
+
+  try {
+    const hashedMbv = await bcrypt.hash(mbv, 12);
+
+    const user = await getUserData(req.user.id, "id");
+
+    if (user.card?.number) {
+      return res.status(400).json({
+        error: "Sorry, as of right now we only allow one valid card per user",
+      });
+    } else {
+      await db.query(
+        `INSERT INTO "card" (owner_id, owner_account_number, number, expiry_date, mbv) VALUES ($1, $2, $3, $4, $5);`,
+        [
+          user.id,
+          user.account_number,
+          finalCardNumber,
+          expiryDate.toISOString(),
+          hashedMbv,
+        ]
+      );
+
+      const formattedExpiryDate = `${
+        expiryDate.getUTCMonth() + 1
+      }/${expiryDate.getUTCFullYear()}`;
+
+      res.status(200).json({
+        message: "Card issued successfully",
+        card: {
+          number: finalCardNumber,
+          expiry_date: formattedExpiryDate,
+          mbv: mbv, // Plain MBV is shown to the user
+        },
+      });
+    }
+  } catch (error) {
+    console.error("Card issue error:", error);
+    res.status(500).json({ error: "An unexpected error occurred." });
+  }
+});
+
 app.post("/transfer", async (req, res) => {
   const { sender, receiver, amount } = req.body;
 
