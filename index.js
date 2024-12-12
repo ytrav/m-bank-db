@@ -15,19 +15,25 @@ const refreshSecretKey = process.env.REFRESH_SECRET_KEY;
 
 const { v4: uuidv4 } = require("uuid");
 
+app.use(bodyParser.json());
+const port = 3000;
+const allowedOrigins = ["https://bank.maevetopia.fun", "http://localhost:5173"];
+
 const app = express();
 app.use(
   cors({
     credentials: true,
-    origin: "https://bank.maevetopia.fun",
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
   })
 );
 app.use(express.json());
 app.use(cookieParser());
-const port = 3000;
-
-app.use(bodyParser.json());
-
 const db = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
