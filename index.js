@@ -346,8 +346,6 @@ app.post("/register", async (req, res) => {
 app.post("/transfer", async (req, res) => {
   const { sender, receiver, amount } = req.body;
 
-
-
   if (!sender || !receiver || !amount) {
     return res.status(400).json({ error: "Missing required fields" });
   }
@@ -407,7 +405,7 @@ app.post("/transfer", async (req, res) => {
     // Log transaction
     await db.query(
       `INSERT INTO "Transaction" (sender_account_number, receiver_account_number, amount, timestamp, type, description)
-       VALUES ($1, $2, $3, $4, 'outgoing', $5)`,
+       VALUES ($1, $2, $3, $4, 'outgoing', $5) RETURNING id`,
       [sender, receiver, amount, timestamp, description]
     );
 
