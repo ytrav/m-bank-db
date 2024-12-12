@@ -15,11 +15,11 @@ const refreshSecretKey = process.env.REFRESH_SECRET_KEY;
 
 const { v4: uuidv4 } = require("uuid");
 
+const app = express();
 app.use(bodyParser.json());
 const port = 3000;
 const allowedOrigins = ["https://bank.maevetopia.fun", "http://localhost:5173"];
 
-const app = express();
 app.use(
   cors({
     credentials: true,
