@@ -375,7 +375,8 @@ app.post("/issue-card", authenticateToken, async (req, res) => {
 
     return (10 - (sum % 10)) % 10;
   })();
-  const finalCardNumber = "44" + cardNumber + checkDigit;
+  const finalCardNumber = cardNumber + checkDigit;
+  const finalFormattedCardNumber = "44" + cardNumber + checkDigit;
 
   const mbv = Math.floor(Math.random() * 1e4)
     .toString()
@@ -409,7 +410,7 @@ app.post("/issue-card", authenticateToken, async (req, res) => {
       res.status(200).json({
         message: "Card issued successfully",
         card: {
-          number: finalCardNumber,
+          number: finalFormattedCardNumber,
           expiry_date: formattedExpiryDate,
           mbv: mbv, // Plain MBV is shown to the user
         },
@@ -421,11 +422,15 @@ app.post("/issue-card", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/transfer", async (req, res) => {
+app.post("/transfer", authenticateToken, async (req, res) => {
   const { sender, receiver, amount } = req.body;
 
   if (!sender || !receiver || !amount) {
     return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  if (sender === receiver) {
+    return res.status(400).json({ error: "You can't send a transfer to your own account" });
   }
 
   try {
@@ -442,7 +447,7 @@ app.post("/transfer", async (req, res) => {
           "There seems to be a problem with reading your account information. Try to sign out and back in and try again",
       });
     }
-    if (senderRow.balance < amount) {
+    if (parseFloat(senderRow.balance) < parseFloat(amount)) {
       return res
         .status(400)
         .json({ error: "Insufficient funds for the transaction" });
