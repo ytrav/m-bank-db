@@ -231,16 +231,65 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// Updated /refresh route
-app.post("/refresh", authenticateRefreshToken, (req, res) => {
-  const user = req.user;
+app.post("/login-mobile", async (req, res) => {
+  const { accountNum, password, remember } = req.body;
 
-  const newAccessToken = jwt.sign(
-    { id: user.id, account_number: user.account_number },
-    secretKey,
-    { expiresIn: "1h" }
-  );
-  res.json({ accessToken: newAccessToken });
+  try {
+    const user = await getUserData(accountNum, "account_number");
+    const hashedPassword = await getUserPassword(accountNum);
+
+    if (bcrypt.compareSync(password, hashedPassword)) {
+      const accessToken = jwt.sign(
+        { id: user.id, account_number: user.account_number },
+        secretKey,
+        { expiresIn: "1h" }
+      );
+      const refreshToken = jwt.sign(
+        { id: user.id, account_number: user.account_number },
+        refreshSecretKey,
+        { expiresIn: remember ? "7d" : "1h" }
+      );
+
+      // Return refreshToken in JSON instead of a cookie
+      res.json({ message: "success", accessToken, refreshToken, user });
+    } else {
+      res.status(401).json({ error: "Invalid account number or password" });
+    }
+  } catch (error) {
+    console.log("error: ", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Updated /refresh route
+app.post("/refresh", (req, res) => {
+  // For Web: Token is in the cookies (handled by middleware)
+  const webToken = req.cookies?.refreshToken;
+
+  // For Mobile: Token is in the request body
+  const { refreshToken: mobileToken } = req.body;
+
+  // Determine which token to use
+  const refreshToken = webToken || mobileToken;
+
+  if (!refreshToken) {
+    return res.status(401).json({ error: "No refresh token provided" });
+  }
+
+  jwt.verify(refreshToken, refreshSecretKey, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: "Invalid refresh token" });
+    }
+
+    // Generate a new access token
+    const newAccessToken = jwt.sign(
+      { id: user.id, account_number: user.account_number },
+      secretKey,
+      { expiresIn: "1h" }
+    );
+
+    res.json({ accessToken: newAccessToken });
+  });
 });
 
 app.post("/logout", (req, res) => {
@@ -430,7 +479,9 @@ app.post("/transfer", authenticateToken, async (req, res) => {
   }
 
   if (sender === receiver) {
-    return res.status(400).json({ error: "You can't send a transfer to your own account" });
+    return res
+      .status(400)
+      .json({ error: "You can't send a transfer to your own account" });
   }
 
   try {
