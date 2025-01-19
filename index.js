@@ -299,6 +299,9 @@ app.post("/refresh", (req, res) => {
     return res.status(401).json({ error: "No refresh token provided" });
   }
 
+  console.log("refreshToken: ", refreshToken);
+  
+
   jwt.verify(refreshToken, refreshSecretKey, (err, user) => {
     if (err) {
       return res.status(403).json({ error: "Invalid refresh token" });
