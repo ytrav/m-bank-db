@@ -293,6 +293,34 @@ app.post("/refresh", (req, res) => {
   });
 });
 
+app.post("/refresh-mobile", (req, res) => {
+  const refreshToken = req.body.refreshToken;
+
+  if (!refreshToken) {
+    return res.status(401).json({ error: "No refresh token provided" });
+  }
+
+  console.log("refreshToken: ", refreshToken);
+  
+
+  jwt.verify(refreshToken, refreshSecretKey, (err, user) => {
+    if (err) {
+      console.error("Refresh token error:", err);
+      
+      return res.status(403).json({ accessToken: null, error: "Invalid refresh token" });
+    }
+
+    const newAccessToken = jwt.sign(
+      { id: user.id, account_number: user.account_number },
+      secretKey,
+      { expiresIn: "1h" }
+    );
+    console.log("newAccessToken: ", newAccessToken);
+    
+    res.json({ accessToken: newAccessToken });
+  });
+});
+
 app.post("/logout", (req, res) => {
   res.clearCookie("refreshToken");
   res.json({ message: "Logged out successfully" });
