@@ -245,9 +245,13 @@ app.post("/login-mobile", async (req, res) => {
         { expiresIn: "1h" }
       );
       const refreshToken = jwt.sign(
-        { id: user.id, account_number: user.account_number, uuid: uuidv4() },
-        refreshSecretKey,
-        { expiresIn: "90d" }
+        {
+          id: user.id,
+          account_number: user.account_number,
+          iat: Math.floor(Date.now() / 1000),  // Set issue time explicitly
+          exp: Math.floor(Date.now() / 1000) + 90 * 24 * 60 * 60, // 90 days
+        },
+        refreshSecretKey
       );
       console.log("new refreshToken: ", refreshToken);
       
