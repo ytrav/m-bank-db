@@ -251,7 +251,6 @@ app.post("/login-mobile", async (req, res) => {
       );
       console.log("new refreshToken: ", refreshToken);
       
-      // Return refreshToken in JSON instead of a cookie
       res.json({ message: "success", accessToken, refreshToken, user });
     } else {
       res.status(401).json({ error: "Invalid account number or password" });
@@ -261,37 +260,6 @@ app.post("/login-mobile", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-// app.post("/refresh", (req, res) => {
-//   // For Web: Token is in the cookies (handled by middleware)
-//   const webToken = req.cookies?.refreshToken;
-
-//   // For Mobile: Token is in the request body
-//   const { refreshToken: mobileToken } = req.body;
-
-//   // Determine which token to use
-//   const refreshToken = webToken || mobileToken;
-  
-
-//   if (!refreshToken) {
-//     return res.status(401).json({ error: "No refresh token provided" });
-//   }
-
-//   jwt.verify(refreshToken, refreshSecretKey, (err, user) => {
-//     if (err) {
-//       return res.status(403).json({ error: "Invalid refresh token" });
-//     }
-
-//     // Generate a new access token
-//     const newAccessToken = jwt.sign(
-//       { id: user.id, account_number: user.account_number },
-//       secretKey,
-//       { expiresIn: "1h" }
-//     );
-
-//     res.json({ accessToken: newAccessToken });
-//   });
-// });
 
 app.post("/refresh", (req, res) => {
   const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
