@@ -232,7 +232,7 @@ app.post("/login", async (req, res) => {
 });
 
 app.post("/login-mobile", async (req, res) => {
-  const { accountNum, password, remember } = req.body;
+  const { accountNum, password } = req.body;
 
   try {
     const user = await getUserData(accountNum, "account_number");
@@ -247,7 +247,7 @@ app.post("/login-mobile", async (req, res) => {
       const refreshToken = jwt.sign(
         { id: user.id, account_number: user.account_number },
         refreshSecretKey,
-        { expiresIn: remember ? "7d" : "1h" }
+        { expiresIn: "90d" }
       );
 
       // Return refreshToken in JSON instead of a cookie
