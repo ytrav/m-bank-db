@@ -245,7 +245,7 @@ app.post("/login-mobile", async (req, res) => {
         { expiresIn: "1h" }
       );
       const refreshToken = jwt.sign(
-        { id: user.id, account_number: user.account_number },
+        { id: user.id, account_number: user.account_number, uuid: uuidv4() },
         refreshSecretKey,
         { expiresIn: "90d" }
       );
