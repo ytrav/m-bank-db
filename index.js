@@ -249,7 +249,8 @@ app.post("/login-mobile", async (req, res) => {
         refreshSecretKey,
         { expiresIn: "90d" }
       );
-
+      console.log("new refreshToken: ", refreshToken);
+      
       // Return refreshToken in JSON instead of a cookie
       res.json({ message: "success", accessToken, refreshToken, user });
     } else {
