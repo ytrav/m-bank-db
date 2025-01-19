@@ -304,6 +304,8 @@ app.post("/refresh", (req, res) => {
 
   jwt.verify(refreshToken, refreshSecretKey, (err, user) => {
     if (err) {
+      console.error("Refresh token error:", err);
+      
       return res.status(403).json({ error: "Invalid refresh token" });
     }
 
@@ -312,7 +314,8 @@ app.post("/refresh", (req, res) => {
       secretKey,
       { expiresIn: "1h" }
     );
-
+    console.log("newAccessToken: ", newAccessToken);
+    
     res.json({ accessToken: newAccessToken });
   });
 });
